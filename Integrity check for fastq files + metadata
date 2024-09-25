@@ -1,0 +1,66 @@
+# Setting location of code so R knows where to look
+setwd("C:\\Users\\Owner\\OneDrive\\Documents\\SemesterStart") #This should be changed based on individual's folder location
+getwd()
+# Installing BiocManager
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("Biostrings")
+library(Biostrings)
+
+# List all FASTQ files
+fq_files <- list.files(pattern = "*.fastq", full.names = TRUE)
+
+# Read FASTQ files
+fastq_data <- lapply(fq_files, readDNAStringSet, format = "fastq")
+# Function to check read counts in each FASTQ file
+check_read_counts <- function(fastq_data) {
+  lapply(fastq_data, length)
+}
+
+# Get the read counts
+read_counts <- check_read_counts(fastq_data)
+print(read_counts)
+
+
+# 6. Read metadata
+metadata <- read.table("TestIllumina_Metadata.txt", header = TRUE, sep = "\t")
+str(metadata)
+summary(metadata)
+
+# 7. Check consistency between metadata and FASTQ files
+
+# Extract core sample names from FASTQ file names by removing prefixes and extensions
+fastq_sample_names <- sapply(fq_files, function(x) {
+  sub(".*(ZH[0-9]+).*", "\\1", basename(x))  # Extracts the ZHxxxx pattern
+})
+
+# Extract sample names from metadata
+metadata_sample_names <- metadata$SampleID  # This is correct
+
+# Now check if all metadata sample names are in the FASTQ file names
+all(metadata_sample_names %in% fastq_sample_names)
+
+# IF PREVIOUS CODE CAME OUT AS FALSE, RUN THIS:
+# List the FASTQ files in your directory
+fq_files <- list.files(pattern = "*.fastq", full.names = TRUE)
+
+# Extract sample names from the FASTQ files, removing prefixes and extensions
+fastq_sample_names <- sapply(fq_files, function(x) {
+  # Remove everything before the first occurrence of "ZH" and everything after the first underscore
+  sub(".*(ZH[0-9]+).*", "\\1", basename(x)) 
+})
+
+# Extract sample names from the metadata
+metadata_sample_names <- metadata$SampleID
+
+# Find samples in the metadata but missing in FASTQ files
+missing_fastq_samples <- metadata_sample_names[!metadata_sample_names %in% fastq_sample_names]
+print("Samples in metadata but missing in FASTQ files:")
+print(missing_fastq_samples)
+
+# Find FASTQ files that do not have corresponding metadata entries
+missing_metadata_samples <- fastq_sample_names[!fastq_sample_names %in% metadata_sample_names]
+print("FASTQ files without matching metadata samples:")
+print(missing_metadata_samples)
+
