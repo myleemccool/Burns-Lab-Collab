@@ -1,0 +1,44 @@
+# Function to allow user to select a database and assign taxonomy
+assign_taxonomy_based_on_choice <- function(sequence_table) {
+  
+  # Step 1: Ask the user which database they want to use
+  cat("Choose a reference database for taxonomy assignment: \n")
+  cat("1: SILVA\n")
+  cat("2: Greengenes (GG2)\n")
+  cat("3: RDP\n")
+  
+  choice <- as.integer(readline(prompt = "Enter the number corresponding to the database: "))
+  
+  # Step 2: Define the paths to the reference databases
+  silva_ref <- "path/to/silva_nr_v132_train_set.fa.gz"  # Path to SILVA reference
+  gg_ref <- "path/to/gg_13_8_train_set_97.fa.gz"  # Path to Greengenes reference
+  rdp_ref <- "path/to/rdp_train_set_16.fa.gz"  # Path to RDP reference
+  
+  # Step 3: Based on the user's choice, call assignTaxonomy using the appropriate reference
+  if (choice == 1) {
+    cat("Assigning taxonomy using SILVA...\n")
+    taxonomy <- assignTaxonomy(sequence_table, silva_ref, multithread=TRUE)
+    
+  } else if (choice == 2) {
+    cat("Assigning taxonomy using Greengenes (GG2)...\n")
+    taxonomy <- assignTaxonomy(sequence_table, gg_ref, multithread=TRUE)
+    
+  } else if (choice == 3) {
+    cat("Assigning taxonomy using RDP...\n")
+    taxonomy <- assignTaxonomy(sequence_table, rdp_ref, multithread=TRUE)
+    
+  } else {
+    cat("Invalid choice. Please enter 1, 2, or 3.\n")
+    return(NULL)  # Stop the function if an invalid choice is made
+  }
+  
+  # Step 4: Output the taxonomy results
+  return(taxonomy)
+}
+
+# Example usage: assuming 'seqtab' is your sequence table obtained from the DADA2 pipeline
+# Replace 'seqtab' with the actual object holding your sequence data
+taxonomy_result <- assign_taxonomy_based_on_choice(seqtab)
+
+# You can then inspect the taxonomy assignment results
+print(taxonomy_result)
