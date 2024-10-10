@@ -36,9 +36,8 @@ assign_taxonomy_based_on_choice <- function(sequence_table) {
   return(taxonomy)
 }
 
-# Example usage: assuming 'seqtab' is your sequence table obtained from the DADA2 pipeline
 # Replace 'seqtab' with the actual object holding your sequence data
 taxonomy_result <- assign_taxonomy_based_on_choice(seqtab)
 
-# You can then inspect the taxonomy assignment results
+# prints the taxonomy assignment results
 print(taxonomy_result)
