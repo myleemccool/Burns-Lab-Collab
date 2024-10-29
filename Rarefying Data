@@ -1,0 +1,7 @@
+# DADA2's example data (phyloseq) was used here
+#### Rarefying ####
+# Rarefy the phyloseq object
+rarefied_ps <- rarefy_even_depth(ps, rngseed = 123, verbose = TRUE)
+
+# Inspect the rarefied phyloseq object
+rarefied_ps
