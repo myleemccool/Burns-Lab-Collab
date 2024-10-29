@@ -1,0 +1,113 @@
+# I used the rarefied version of DADA2's example data here
+
+# Use BiocManager to install DESeq2
+BiocManager::install("DESeq2")
+
+library(DESeq2)
+
+sample_data(rarefied_ps) # Replace `rarefied_ps` with your phyloseq object name
+
+#### Early vs. Late Plot ####
+# Load DESeq2 and ggplot2
+library(DESeq2)
+library(ggplot2)
+
+# Convert the phyloseq object to a DESeq2 object
+dds <- phyloseq_to_deseq2(rarefied_ps, ~ When)
+
+# Run DESeq2 differential abundance analysis
+dds <- DESeq(dds)
+
+# Extract the results for Early vs. Late
+res <- results(dds, contrast = c("When", "Early", "Late"))
+
+# Filter results for significant taxa (e.g., adjusted p-value < 0.05)
+sig_res <- res[which(res$padj < 0.05), ]
+
+# Convert the results to a data frame for plotting
+plot_data <- as.data.frame(sig_res)
+plot_data$taxa <- rownames(plot_data)
+
+# The graph that came up showed long sequences of DNA... 
+# The code below this only shows the first 10 characters of taxa
+# Plot calculations based on complete data
+
+# Shorten the taxa names for easier plotting
+plot_data$taxa <- substr(rownames(plot_data), 1, 10)
+ggplot(plot_data, aes(x = reorder(taxa, log2FoldChange), y = log2FoldChange, fill = log2FoldChange > 0)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Differential Abundance - Early vs. Late",
+       x = "Taxa", y = "Log2 Fold Change") +
+  theme_minimal() +
+  scale_fill_manual(values = c("blue", "red"), labels = c("Late", "Early"))
+
+#### Alpha Diversity Plot ####
+# Load necessary libraries
+library(phyloseq)
+library(ggplot2)
+
+# Calculate Shannon diversity index
+alpha_div <- estimate_richness(rarefied_ps, measures = "Shannon")
+
+# Merge alpha diversity with sample data for plotting
+alpha_data <- data.frame(sample_data(rarefied_ps), Shannon = alpha_div$Shannon)
+
+# Plot Shannon diversity by Early vs. Late stages
+ggplot(alpha_data, aes(x = When, y = Shannon, fill = When)) +
+  geom_boxplot() +
+  labs(title = "Alpha Diversity (Shannon) - Early vs. Late",
+       x = "Stage", y = "Shannon Diversity") +
+  theme_minimal() +
+  scale_fill_manual(values = c("blue", "red"))
+
+#### Alpha Statistically significant? ####
+# Perform Wilcoxon rank-sum test
+wilcox.test(Shannon ~ When, data = alpha_data)
+# OR you can do t-test:
+# Perform t-test
+t.test(Shannon ~ When, data = alpha_data)
+
+#### Beta Diversity Plot ####
+# Calculate Bray-Curtis distance matrix
+bray_dist <- phyloseq::distance(rarefied_ps, method = "bray")
+
+# Perform PCoA ordination
+ordination <- ordinate(rarefied_ps, method = "PCoA", distance = bray_dist)
+
+# Plot PCoA with ggplot2, color-coded by Early vs. Late stages
+plot_ordination(rarefied_ps, ordination, color = "When") +
+  geom_point(size = 3) +
+  labs(title = "Beta Diversity (PCoA) - Early vs. Late",
+       x = "PC1", y = "PC2") +
+  theme_minimal() +
+  scale_color_manual(values = c("blue", "red"))
+
+#### Beta Statistically significant? ####
+# Load vegan package if not already loaded
+library(vegan)
+
+# Calculate the Bray-Curtis distance matrix
+distance_matrix <- phyloseq::distance(rarefied_ps, method = "bray")
+# Extract sample data and ensure it's in data frame format
+sample_data <- data.frame(sample_data(rarefied_ps))
+
+# Run the PERMANOVA test
+permanova_result <- adonis(distance_matrix ~ When, data = sample_data)
+# Print only the p-value
+print(permanova_result$aov.tab$`Pr(>F)`[1])
+
+#P Value above was very small, wanted to double check by running another method
+#
+
+# Calculate Bray-Curtis distance matrix
+distance_matrix <- phyloseq::distance(rarefied_ps, method = "bray")
+
+# Use betadisper to assess dispersion (variance) among groups
+beta_dispersion <- betadisper(distance_matrix, sample_data$When)
+
+# Run ANOVA test on the beta dispersion result
+anova_result <- anova(beta_dispersion)
+print(anova_result)
+
+
