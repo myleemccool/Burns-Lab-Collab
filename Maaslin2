@@ -1,0 +1,25 @@
+# downloading libraries
+library(phyloseq)
+library(Maaslin2)
+
+# making the data frames
+asv_df <- as.data.frame(as(otu_table(physeq), "matrix"))
+metadata_df <- as.data.frame(sample_data(physeq))
+
+# asv table
+if (!taxa_are_rows(physeq)) {
+  asv_df <- t(asv_df)
+}
+
+# Dataframe
+metadata_df <- metadata_df[match(rownames(asv_df), rownames(metadata_df)), ]
+
+# Analysis
+fit_data <- Maaslin2(
+  input_data = asv_df,         # ASV abundance data
+  input_metadata = metadata_df, # Metadata aligned with ASV table
+  output = "maaslin2_output",   # Output folder
+  normalization = "TSS",        # Total Sum Scaling or other method
+  transform = "LOG",            # Log transformation if needed
+  analysis_method = "LM"        # Linear model (default)
+)
