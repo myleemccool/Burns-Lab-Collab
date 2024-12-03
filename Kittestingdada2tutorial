@@ -1,0 +1,92 @@
+#### Install dada2####
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("dada2")
+a
+#### work ####
+library(dada2)
+
+exists("plotQualityProfile")
+#### This is the working dada2 script
+path <- "/Users/myleemccool/Desktop/KitRetests" # CHANGE ME to the directory containing the fastq files after unzipping.
+list.files(path)
+
+
+# Forward and reverse fastq filenames have format: SAMPLENAME_R1_001.fastq and SAMPLENAME_R2_001.fastq
+fnFs <- sort(list.files(path, pattern="_R1_001.fastq", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern="_R2_001.fastq", full.names = TRUE))
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+#Plot creation: this is an interesting function my dada2 was not working so I explicitly called the function using the package namespace :
+dada2::plotQualityProfile(fnFs[1:2])
+
+#### Forward and reverse read lengths ####
+#Ima check how many reads ar in this to specify the trunclen function
+install.packages("BiocManager")
+BiocManager::install("ShortRead")
+library(ShortRead)
+#read the fastQ file for one of the forward reads: 
+
+fq <- readFastq(fnFs[1])  # Reads the first file
+seq_lengths <- width(sread(fq)) # Extract sequence lengths
+summary(seq_lengths)            # Summarize read length
+#this is what I got
+#  Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#   30.0   232.0   232.0   221.5   251.0   251.0
+
+#now do it for the reverse reads
+fq <- readFastq(fnRs[1])  # Reads the first file
+seq_lengths <- width(sread(fq)) # Extract sequence lengths
+summary(seq_lengths)   
+# This is what I got for one of the rever
+#.  26.0   231.0   231.0   199.7   249.2   251.0 
+# for the truncLen paramete the best rage is 230,220
+
+# Place filtered files in filtered/ subdirectory
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+names(filtFs) <- sample.names
+names(filtRs) <- sample.names
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(230,218),
+                     maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+                     compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+head(out)
+
+#make sure to save the data in the object track so we can find it later
+#LEarning error rates
+errF <- learnErrors(filtFs, multithread=TRUE)
+errR <- learnErrors(filtRs, multithread=TRUE)
+plotErrors(errF, nominalQ=TRUE)
+
+#this took forever omg like three hours
+#sample einference
+dadaFs <- dada(filtFs, err=errF, multithread=TRUE)
+
+dadaRs <- dada(filtRs, err=errR, multithread=TRUE)
+#anyways after waiting what felt like a lifetime there should be like 45 samples and 43217 reads in 11814 sequences or sum
+#lets move on shall we?
+
+#merged paired reads 
+mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
+# Inspect the merger data.frame from the first sample
+head(mergers[[1]])
+
+#Construct sequence table
+seqtab <- makeSequenceTable(mergers)
+dim(seqtab)
+# Inspect distribution of sequence lengths
+table(nchar(getSequences(seqtab)))
+
+#remove chimeras
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+dim(seqtab.nochim)
+sum(seqtab.nochim)/sum(seqtab)
+
+#track reads through the pipeline
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
+# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+rownames(track) <- sample.names
+head(track)
