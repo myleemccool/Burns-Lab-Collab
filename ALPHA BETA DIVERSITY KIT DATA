@@ -1,0 +1,197 @@
+library(dada2); packageVersion("dada2")
+path <- "~/Downloads/MB_2020-17" # CHANGE ME to the directory containing the fastq files after unzipping.
+list.files(path)
+# Forward and reverse fastq filenames have format: SAMPLENAME_R1_001.fastq and SAMPLENAME_R2_001.fastq
+fnFs <- sort(list.files(path, pattern="_R1_001.fastq", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern="_R2_001.fastq", full.names = TRUE))
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+plotQualityProfile(fnFs[1:2])
+plotQualityProfile(fnRs[1:2])
+# Place filtered files in filtered/ subdirectory
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+names(filtFs) <- sample.names
+names(filtRs) <- sample.names
+
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(240,160),
+                     maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+                     compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+head(out)
+
+errF <- learnErrors(filtFs, multithread=TRUE)
+
+errR <- learnErrors(filtRs, multithread=TRUE)
+
+plotErrors(errF, nominalQ=TRUE)
+
+dadaFs <- dada(filtFs, err=errF, multithread=TRUE)
+
+dadaRs <- dada(filtRs, err=errR, multithread=TRUE)
+
+dadaFs[[1]]
+
+mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
+# Inspect the merger data.frame from the first sample
+head(mergers[[1]])
+
+
+seqtab <- makeSequenceTable(mergers)
+dim(seqtab)
+
+# Inspect distribution of sequence lengths
+table(nchar(getSequences(seqtab)))
+
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+dim(seqtab.nochim)
+
+sum(seqtab.nochim)/sum(seqtab)
+
+
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
+# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+rownames(track) <- sample.names
+head(track)
+
+"~/Downloads/MiSeq_SOP/silva_nr_v132_train_set.fa.gz"
+taxa <- assignTaxonomy(seqtab.nochim, "~/Downloads/MiSeq_SOP/silva_nr_v132_train_set.fa.gz", multithread=TRUE)
+
+
+taxa <- assignTaxonomy(seqtab.nochim, "/Users/mbb/Downloads/MiSeq_SOP/silva_nr_v132_train_set.fa.gz", multithread=TRUE)
+
+taxa.print <- taxa # Removing sequence rownames for display only
+rownames(taxa.print) <- NULL
+head(taxa.print)
+
+
+unqs.mock <- seqtab.nochim["MB",]
+unqs.mock <- sort(unqs.mock[unqs.MB>0], decreasing=TRUE) # Drop ASVs absent in the Mock
+cat("DADA2 inferred", length(unqs.MB), "sample sequences present in the Mock community.\n")
+
+
+# Subset the ASV table for "MB" sample
+unqs.mock <- seqtab.nochim["MB", ]
+
+# Filter and sort the ASVs present in the Mock community
+unqs.mock <- sort(unqs.mock[unqs.mock > 0], decreasing = TRUE)
+
+# Display the count of unique sequences
+cat("DADA2 inferred", length(unqs.mock), "sample sequences present in the Mock community.\n")
+
+
+mock.ref <- getSequences(file.path(path, "~/Downloads/MB_2020-17"))
+match.ref <- sum(sapply(names(unqs.mock), function(x) any(grepl(x, mock.ref))))
+cat("Of those,", sum(match.ref), "were exact matches to the expected reference sequences.\n")
+
+
+library(phyloseq); packageVersion("phyloseq")
+library(Biostrings); packageVersion("Biostrings")
+library(ggplot2); packageVersion("ggplot2")
+theme_set(theme_bw())
+
+
+samples.out <- rownames(seqtab.nochim)
+subject <- sapply(strsplit(samples.out, "D"), `[`, 1)
+gender <- substr(subject,1,1)
+subject <- substr(subject,2,999)
+day <- as.integer(sapply(strsplit(samples.out, "D"), `[`, 2))
+samdf <- data.frame(Subject=subject, Gender=gender, Day=day)
+samdf$When <- "Early"
+samdf$When[samdf$Day>100] <- "Late"
+rownames(samdf) <- samples.out
+
+ps <- phyloseq(otu_table(seqtab.nochim, taxa_are_rows=FALSE), 
+               sample_data(samdf), 
+               tax_table(taxa))
+ps <- prune_samples(sample_names(ps) != "Mock", ps) # Remove mock sampl
+
+dna <- Biostrings::DNAStringSet(taxa_names(ps))
+names(dna) <- taxa_names(ps)
+ps <- merge_phyloseq(ps, dna)
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+
+plot_richness(ps, x="Day", measures=c("Shannon", "Simpson"), color="When")
+
+# Transform data to proportions as appropriate for Bray-Curtis distances
+ps.prop <- transform_sample_counts(ps, function(otu) otu/sum(otu))
+ord.nmds.bray <- ordinate(ps.prop, method="NMDS", distance="bray")
+
+
+sample_sums(ps)
+ps <- prune_samples(sample_sums(ps) > 0, ps)
+ps.prop <- transform_sample_counts(ps, function(otu) otu / sum(otu))
+ord.nmds.bray <- ordinate(ps.prop, method = "NMDS", distance = "bray")
+any(is.na(otu_table(ps.prop)))
+dim(otu_table(ps.prop))  # Check dimensions: samples x features
+feature_var <- apply(otu_table(ps.prop), 1, var)
+summary(feature_var)
+ps.prop <- prune_taxa(feature_var > 0, ps.prop)
+feature_var <- apply(otu_table(ps.prop), 2, var)  # Compute variance for each feature (columns)
+summary(feature_var)  # Check summary of the variances
+ps.prop <- prune_taxa(feature_var > 0, ps.prop)
+bray.dist <- distance(ps.prop, method = "bray")
+summary(bray.dist)
+library(phyloseq)
+bray.dist <- phyloseq::distance(ps.prop, method = "bray")
+is.numeric(otu_table(ps.prop))
+
+
+
+
+sum(is.na(sample_sums(ps)))
+sum(sample_sums(ps) == 0)
+
+ps <- prune_samples(sample_sums(ps) > 0, ps)
+
+ps.prop <- transform_sample_counts(ps, function(otu) otu / sum(otu))
+
+ord.nmds.bray <- ordinate(ps.prop, method = "NMDS", distance = "bray")
+
+print(ord.nmds.bray)
+
+
+plot_ordination(ps.prop, ord.nmds.bray, color="When", title="Bray NMDS")
+
+
+top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:20]
+ps.top20 <- transform_sample_counts(ps, function(OTU) OTU/sum(OTU))
+ps.top20 <- prune_taxa(top20, ps.top20)
+plot_bar(ps.top20, x="Day", fill="Family") + facet_wrap(~When, scales="free_x")
+
+
+# We want to write out as csv files, the objects taxa and seqtab.nochim
+# These are the starting point for all other analyses.
+
+# Extract the taxa table
+taxa_table <- tax_table(ps.prop)
+
+# Extract the sequence table (OTU table)
+seqtab_nochim <- otu_table(ps.prop)
+
+
+# Write the taxa table to a CSV file
+write.csv(as.data.frame(taxa_table), file = "taxa.csv", row.names = TRUE)
+
+# Write the sequence table (no chimeras) to a CSV file
+write.csv(as.data.frame(seqtab_nochim), file = "seqtab_nochim.csv", row.names = TRUE)
+
+plot_richness(ps, x = "Day", measures = c("Shannon", "Simpson"), color = "When") +
+  geom_boxplot(alpha = 0.6) +  # Add boxplot for summary
+  geom_jitter(width = 0.2, size = 2, alpha = 0.8) +  # Add individual points
+  theme_minimal() +
+  labs(title = "Alpha Diversity Across Days", x = "Day", y = "Diversity Index")
+sample_data(ps)$Day <- as.numeric(as.character(sample_data(ps)$Day))
+alpha_div <- estimate_richness(ps, measures = c("Shannon", "Simpson"))
+head(alpha_div)
+summary(alpha_div)
+ps <- prune_samples(sample_sums(ps) > 0, ps)
+alpha_div$Day <- sample_data(ps)$Day  # Ensure metadata is linked
+alpha_div$When <- sample_data(ps)$When  # Add grouping variable
+
+ggplot(alpha_div, aes(x = factor(Day), y = Shannon, fill = When)) +
+  geom_boxplot(alpha = 0.6) +
+  geom_jitter(shape = 16, position = position_jitter(0.2), size = 2, alpha = 0.8) +
+  theme_minimal() +
+  labs(title="Alpha Diversity (Shannon Index)", x="Day", y="Shannon Diversity")
